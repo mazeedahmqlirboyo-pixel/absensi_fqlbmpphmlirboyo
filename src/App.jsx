@@ -16,12 +16,12 @@ function App() {
         <div className="max-w-md mx-auto text-center flex flex-col items-center">
           
           {/* Logo Placeholder */}
-          <div className="w-16 h-16 bg-white/10 rounded-full border-2 border-white/20 mb-3 overflow-hidden flex items-center justify-center shadow-lg relative">
-            <BookOpen className="w-8 h-8 text-white/50 absolute z-0" />
+          <div className="w-10 h-10 bg-white/10 rounded-full border-2 border-white/20 mb-3 overflow-hidden flex items-center justify-center shadow-lg relative">
+            <BookOpen className="w-5 h-5 text-white/50 absolute z-0" />
             <img 
               src={logoSrc} 
               alt="Logo" 
-              className="w-full h-full object-cover relative z-10"
+              className="w-full h-full object-contain relative z-10 p-1"
               onError={(e) => {
                 e.target.style.opacity = '0'; // Hide broken image if not found, showing icon underneath
               }} 
