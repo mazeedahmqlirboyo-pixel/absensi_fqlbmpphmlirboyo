@@ -3,6 +3,7 @@ import AttendanceForm from './components/AttendanceForm';
 import Recap from './components/Recap';
 import { PenSquare, ClipboardList, BookOpen } from 'lucide-react';
 import clsx from 'clsx';
+import logoSrc from './assets/logo.png';
 
 function App() {
   const [activeTab, setActiveTab] = useState('form');
@@ -18,7 +19,7 @@ function App() {
           <div className="w-16 h-16 bg-white/10 rounded-full border-2 border-white/20 mb-3 overflow-hidden flex items-center justify-center shadow-lg relative">
             <BookOpen className="w-8 h-8 text-white/50 absolute z-0" />
             <img 
-              src="/logo.jpg" 
+              src={logoSrc} 
               alt="Logo" 
               className="w-full h-full object-cover relative z-10"
               onError={(e) => {
