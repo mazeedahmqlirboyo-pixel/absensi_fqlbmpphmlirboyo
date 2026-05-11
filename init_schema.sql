@@ -23,7 +23,7 @@ CREATE POLICY "Izinkan baca anonim pada absensi" ON public.absensi
 FOR SELECT USING (true);
 
 -- 5. Membuat policy: Izinkan update/delete anonim pada absensi (Opsional, khusus untuk fitur hapus & edit)
-CREATE POLICY "Izinkan update anonim pada absensi" ON public.absensi
+CREATE POLICY "Izinkan update anonim pada abseAnsi" ON public.absensi
 FOR UPDATE USING (true);
 
 CREATE POLICY "Izinkan delete anonim pada absensi" ON public.absensi

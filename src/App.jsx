@@ -1,12 +1,37 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AttendanceForm from './components/AttendanceForm';
 import Recap from './components/Recap';
-import { PenSquare, ClipboardList, BookOpen } from 'lucide-react';
+import { PenSquare, ClipboardList, BookOpen, Download } from 'lucide-react';
 import clsx from 'clsx';
 import logoSrc from './assets/logo.png';
 
 function App() {
   const [activeTab, setActiveTab] = useState('form');
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+  useEffect(() => {
+    const handleBeforeInstallPrompt = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallBanner(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    console.log(`User response to the install prompt: ${outcome}`);
+    setDeferredPrompt(null);
+    setShowInstallBanner(false);
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
@@ -78,6 +103,35 @@ function App() {
           </button>
         </div>
       </nav>
+
+      {/* Install Banner */}
+      {showInstallBanner && (
+        <div className="fixed bottom-20 left-4 right-4 bg-navy text-white p-4 rounded-2xl shadow-2xl z-50 flex items-center justify-between border border-white/20 animate-in slide-in-from-bottom-5">
+          <div className="flex items-center space-x-3">
+            <div className="bg-white/20 p-2 rounded-xl">
+              <Download className="w-6 h-6 text-blue-200" />
+            </div>
+            <div>
+              <p className="font-bold text-sm">Install Aplikasi</p>
+              <p className="text-xs text-blue-200">Tambahkan ke layar utama</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-2">
+            <button 
+              onClick={() => setShowInstallBanner(false)}
+              className="text-xs px-3 py-2 text-slate-300 hover:text-white"
+            >
+              Nanti
+            </button>
+            <button 
+              onClick={handleInstallClick}
+              className="bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold px-4 py-2 rounded-xl transition-colors shadow-lg"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
       
     </div>
   );
