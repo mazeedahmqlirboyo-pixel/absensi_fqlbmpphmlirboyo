@@ -84,6 +84,12 @@ export default function AttendanceForm() {
     setLoading(true);
     setMessage('');
 
+    let finalKeterlambatan = status === 'Hadir' ? keterlambatan : null;
+    if (finalKeterlambatan && finalKeterlambatan.includes('Telat')) {
+      const timeNow = new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+      finalKeterlambatan = `${keterlambatan} (${timeNow})`;
+    }
+
     const { data, error } = await supabase
       .from('absensi')
       .insert([
@@ -91,7 +97,7 @@ export default function AttendanceForm() {
           jamiyyah,
           tanggal_jadwal: tanggal,
           status_kehadiran: status,
-          detail_keterlambatan: status === 'Hadir' ? keterlambatan : null,
+          detail_keterlambatan: finalKeterlambatan,
           lokasi: lokasi,
         }
       ]);

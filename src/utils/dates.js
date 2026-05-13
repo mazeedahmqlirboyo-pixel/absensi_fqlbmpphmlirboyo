@@ -3,7 +3,7 @@ import { id } from 'date-fns/locale';
 
 export const generateWeeklyDates = () => {
   const dates = [];
-  let currentDate = parseISO('2026-04-19'); // 19 April 2026
+  let currentDate = parseISO('2026-04-20'); // 20 April 2026
   const endDate = parseISO('2027-02-01'); // Sampai sebelum Februari 2027
 
   while (isBefore(currentDate, endDate)) {

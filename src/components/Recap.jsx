@@ -10,6 +10,10 @@ export default function Recap() {
   
   const [filterDate, setFilterDate] = useState('Global');
   const [data, setData] = useState([]);
+  const [globalSummary, setGlobalSummary] = useState([]);
+  const [latestTakzirDate, setLatestTakzirDate] = useState(null);
+  const [latestTakzirSummary, setLatestTakzirSummary] = useState([]);
+  const [showTakzirPopup, setShowTakzirPopup] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -31,13 +35,8 @@ export default function Recap() {
 
   const fetchData = async () => {
     setLoading(true);
-    let query = supabase.from('absensi').select('*');
-    
-    if (filterDate !== 'Global') {
-      query = query.eq('tanggal_jadwal', filterDate);
-    }
-
-    const { data: absensi, error: err } = await query;
+    // Fetch all data always to compute the global summary for "Worst Jamiyyah" logic
+    const { data: absensi, error: err } = await supabase.from('absensi').select('*');
 
     if (err) {
       setError(err.message);
@@ -45,44 +44,89 @@ export default function Recap() {
       return;
     }
 
-    if (filterDate === 'Global') {
-      const summary = {};
-      const LOCATIONS = ['Lantai 2', 'Lantai 3'];
+    const summary = {};
+    const LOCATIONS = ['Lantai 2', 'Lantai 3'];
+    
+    JAMIYYAH_LIST.forEach(j => {
+      LOCATIONS.forEach(loc => {
+        summary[`${j} - ${loc}`] = { namaJamiyyah: j, lokasi: loc, total: 0, hadir: 0, tidakHadir: 0, telatCount: 0, detail: {} };
+      });
+    });
+
+    absensi.forEach(row => {
+      const j = row.jamiyyah;
+      const loc = row.lokasi || 'Lantai 2'; // Fallback for older data
+      const key = `${j} - ${loc}`;
       
+      if (summary[key]) {
+        summary[key].total += 1;
+        if (row.status_kehadiran === 'Hadir') {
+          summary[key].hadir += 1;
+          const k = row.detail_keterlambatan;
+          if (k) {
+            summary[key].detail[k] = (summary[key].detail[k] || 0) + 1;
+            if (k.includes('Telat')) {
+              summary[key].telatCount += 1;
+            }
+          }
+        } else {
+          summary[key].tidakHadir += 1;
+        }
+      }
+    });
+    
+    const summaryArray = [];
+    JAMIYYAH_LIST.forEach(j => {
+      LOCATIONS.forEach(loc => {
+        summaryArray.push({ 
+          jamiyyah: `${j} ${loc}`, 
+          ...summary[`${j} - ${loc}`] 
+        });
+      });
+    });
+
+    setGlobalSummary(summaryArray);
+
+    // Latest Date Takziran Summary
+    let latestDate = null;
+    let popupSummaryArray = [];
+    if (absensi.length > 0) {
+      const datesInDb = [...new Set(absensi.map(a => a.tanggal_jadwal))].sort();
+      latestDate = datesInDb[datesInDb.length - 1];
+      
+      const popupSummary = {};
       JAMIYYAH_LIST.forEach(j => {
         LOCATIONS.forEach(loc => {
-          summary[`${j} - ${loc}`] = { total: 0, hadir: 0, tidakHadir: 0, detail: {} };
+          popupSummary[`${j} - ${loc}`] = { namaJamiyyah: j, lokasi: loc, tidakHadir: 0, telatCount: 0, rawTelat: '' };
         });
       });
 
-      absensi.forEach(row => {
+      const latestAbsensi = absensi.filter(a => a.tanggal_jadwal === latestDate);
+      latestAbsensi.forEach(row => {
         const j = row.jamiyyah;
-        const loc = row.lokasi || 'Lantai 2'; // Fallback for older data
+        const loc = row.lokasi || 'Lantai 2';
         const key = `${j} - ${loc}`;
-        
-        if (summary[key]) {
-          summary[key].total += 1;
+        if (popupSummary[key]) {
           if (row.status_kehadiran === 'Hadir') {
-            summary[key].hadir += 1;
             const k = row.detail_keterlambatan;
-            if (k) {
-              summary[key].detail[k] = (summary[key].detail[k] || 0) + 1;
+            if (k && k.includes('Telat')) {
+              popupSummary[key].telatCount = 1;
+              popupSummary[key].rawTelat = k;
             }
           } else {
-            summary[key].tidakHadir += 1;
+            popupSummary[key].tidakHadir = 1;
           }
         }
       });
-      
-      const summaryArray = [];
-      JAMIYYAH_LIST.forEach(j => {
-        LOCATIONS.forEach(loc => {
-          summaryArray.push({ jamiyyah: `${j} ${loc}`, ...summary[`${j} - ${loc}`] });
-        });
-      });
+      popupSummaryArray = Object.values(popupSummary);
+    }
+    setLatestTakzirDate(latestDate);
+    setLatestTakzirSummary(popupSummaryArray);
+
+    if (filterDate === 'Global') {
       setData(summaryArray);
     } else {
-      setData(absensi);
+      setData(absensi.filter(a => a.tanggal_jadwal === filterDate));
     }
     setLoading(false);
   };
@@ -439,6 +483,121 @@ export default function Recap() {
           </div>
         </div>
       )}
+
+      {/* Takziran Popup */}
+      {showTakzirPopup && !loading && latestTakzirSummary.length > 0 && (() => {
+        const getOffenders = (lokasi, type) => {
+          const items = latestTakzirSummary.filter(s => s.lokasi === lokasi);
+          return items.filter(s => type === 'alpa' ? s.tidakHadir > 0 : s.telatCount > 0);
+        };
+
+        const alpaLt2 = getOffenders('Lantai 2', 'alpa');
+        const alpaLt3 = getOffenders('Lantai 3', 'alpa');
+        const telatLt2 = getOffenders('Lantai 2', 'telat');
+        const telatLt3 = getOffenders('Lantai 3', 'telat');
+
+        const hasAlpa = alpaLt2.length > 0 || alpaLt3.length > 0;
+        const hasTelat = telatLt2.length > 0 || telatLt3.length > 0;
+
+        if (!hasAlpa && !hasTelat) return null;
+
+        return (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+            <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden border border-slate-100 animate-in zoom-in-95 duration-300">
+              <div className="bg-red-600 p-5 text-center relative overflow-hidden">
+                <div className="absolute -top-10 -right-10 w-32 h-32 bg-red-500 rounded-full blur-2xl opacity-50"></div>
+                <div className="absolute -bottom-10 -left-10 w-32 h-32 bg-red-700 rounded-full blur-2xl opacity-50"></div>
+                <h3 className="text-xl font-bold text-white relative z-10 flex items-center justify-center">
+                  <UserX className="w-6 h-6 mr-2" />
+                  Daftar Takziran
+                </h3>
+                <p className="text-xs text-red-100 mt-1 relative z-10">Minggu Ini: {formatDateID(latestTakzirDate)}</p>
+              </div>
+              
+              <div className="p-5 max-h-[60vh] overflow-y-auto space-y-5">
+                
+                {/* ALPA SECTION */}
+                {hasAlpa && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 mr-2"></span>
+                      Daftar Alpa
+                    </h4>
+                    <div className="space-y-3">
+                      {alpaLt2.length > 0 && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 mb-1.5">Lantai 2</p>
+                          {alpaLt2.map(w => (
+                            <div key={w.namaJamiyyah} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm mb-1.5 last:mb-0">
+                              <span className="text-xs font-bold text-navy truncate pr-2">{w.namaJamiyyah}</span>
+                              <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded shrink-0">Alpa</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {alpaLt3.length > 0 && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 mb-1.5">Lantai 3</p>
+                          {alpaLt3.map(w => (
+                            <div key={w.namaJamiyyah} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm mb-1.5 last:mb-0">
+                              <span className="text-xs font-bold text-navy truncate pr-2">{w.namaJamiyyah}</span>
+                              <span className="text-[10px] font-black text-red-600 bg-red-50 px-2 py-0.5 rounded shrink-0">Alpa</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* TELAT SECTION */}
+                {hasTelat && (
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mr-2"></span>
+                      Daftar Telat
+                    </h4>
+                    <div className="space-y-3">
+                      {telatLt2.length > 0 && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 mb-1.5">Lantai 2</p>
+                          {telatLt2.map(w => (
+                            <div key={w.namaJamiyyah} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm mb-1.5 last:mb-0">
+                              <span className="text-xs font-bold text-navy truncate pr-2">{w.namaJamiyyah}</span>
+                              <span className="text-[9px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded shrink-0 max-w-[120px] text-right leading-tight">{w.rawTelat}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {telatLt3.length > 0 && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                          <p className="text-[10px] font-bold text-slate-400 mb-1.5">Lantai 3</p>
+                          {telatLt3.map(w => (
+                            <div key={w.namaJamiyyah} className="flex justify-between items-center bg-white p-2 rounded-lg border border-slate-100 shadow-sm mb-1.5 last:mb-0">
+                              <span className="text-xs font-bold text-navy truncate pr-2">{w.namaJamiyyah}</span>
+                              <span className="text-[9px] font-bold text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded shrink-0 max-w-[120px] text-right leading-tight">{w.rawTelat}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+              </div>
+              
+              <div className="p-4 border-t border-slate-100 bg-slate-50">
+                <button 
+                  onClick={() => setShowTakzirPopup(false)}
+                  className="w-full py-3 font-bold text-white bg-slate-800 rounded-xl hover:bg-slate-700 transition-colors shadow-md"
+                >
+                  Tutup & Lihat Rekapan
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );
