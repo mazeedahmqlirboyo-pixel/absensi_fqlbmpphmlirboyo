@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { JAMIYYAH_LIST } from '../constants';
+import { JAMIYYAH_LIST, PERUMUS_LIST } from '../constants';
 import { generateWeeklyDates, formatDateID } from '../utils/dates';
-import { BarChart3, Loader2, Edit2, CalendarDays, CheckCircle2, UserX, Trash2 } from 'lucide-react';
+import { BarChart3, Loader2, Edit2, CalendarDays, CheckCircle2, UserX, Trash2, FileSpreadsheet, FileText } from 'lucide-react';
+import { exportToExcel, exportToWord } from '../utils/exportUtils';
+import CustomSelect from './CustomSelect';
 import clsx from 'clsx';
 
-export default function Recap() {
+export default function Recap({ category = 'jamiyyah', isAdmin = false }) {
   const dates = generateWeeklyDates();
   
   const [filterDate, setFilterDate] = useState('Global');
@@ -16,6 +18,7 @@ export default function Recap() {
   const [showTakzirPopup, setShowTakzirPopup] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [pesertaList, setPesertaList] = useState([]);
 
   // Edit Modal State
   const [editingRecord, setEditingRecord] = useState(null);
@@ -31,29 +34,45 @@ export default function Recap() {
 
   useEffect(() => {
     fetchData();
-  }, [filterDate]);
+  }, [filterDate, category]);
 
   const fetchData = async () => {
     setLoading(true);
-    // Fetch all data always to compute the global summary for "Worst Jamiyyah" logic
     const { data: absensi, error: err } = await supabase.from('absensi').select('*');
+    const { data: pesertaDb, error: pErr } = await supabase.from('peserta').select('*');
 
-    if (err) {
-      setError(err.message);
+    if (err || pErr) {
+      setError((err?.message || '') + ' ' + (pErr?.message || ''));
       setLoading(false);
       return;
     }
 
+    const uniquePesertaDb = [];
+    const seen = new Set();
+    (pesertaDb || []).forEach(p => {
+      if (!seen.has(p.nama)) {
+        seen.add(p.nama);
+        uniquePesertaDb.push(p);
+      }
+    });
+
+    const currentPeserta = uniquePesertaDb.filter(p => p.kategori === category);
+    setPesertaList(currentPeserta);
+    const activeListNames = currentPeserta.map(p => p.nama);
+
     const summary = {};
     const LOCATIONS = ['Lantai 2', 'Lantai 3'];
     
-    JAMIYYAH_LIST.forEach(j => {
-      LOCATIONS.forEach(loc => {
-        summary[`${j} - ${loc}`] = { namaJamiyyah: j, lokasi: loc, total: 0, hadir: 0, tidakHadir: 0, telatCount: 0, detail: {} };
+    currentPeserta.forEach(p => {
+      const validLocations = p.lokasi === 'Semua' ? LOCATIONS : [p.lokasi];
+      validLocations.forEach(loc => {
+        summary[`${p.nama} - ${loc}`] = { namaJamiyyah: p.nama, lokasi: loc, total: 0, hadir: 0, tidakHadir: 0, telatCount: 0, detail: {} };
       });
     });
 
-    absensi.forEach(row => {
+    const categoryAbsensi = absensi.filter(a => activeListNames.includes(a.jamiyyah));
+
+    categoryAbsensi.forEach(row => {
       const j = row.jamiyyah;
       const loc = row.lokasi || 'Lantai 2'; // Fallback for older data
       const key = `${j} - ${loc}`;
@@ -76,11 +95,12 @@ export default function Recap() {
     });
     
     const summaryArray = [];
-    JAMIYYAH_LIST.forEach(j => {
-      LOCATIONS.forEach(loc => {
+    currentPeserta.forEach(p => {
+      const validLocations = p.lokasi === 'Semua' ? LOCATIONS : [p.lokasi];
+      validLocations.forEach(loc => {
         summaryArray.push({ 
-          jamiyyah: `${j} ${loc}`, 
-          ...summary[`${j} - ${loc}`] 
+          jamiyyah: `${p.nama} ${loc}`, 
+          ...summary[`${p.nama} - ${loc}`] 
         });
       });
     });
@@ -90,18 +110,19 @@ export default function Recap() {
     // Latest Date Takziran Summary
     let latestDate = null;
     let popupSummaryArray = [];
-    if (absensi.length > 0) {
-      const datesInDb = [...new Set(absensi.map(a => a.tanggal_jadwal))].sort();
+    if (categoryAbsensi.length > 0) {
+      const datesInDb = [...new Set(categoryAbsensi.map(a => a.tanggal_jadwal))].sort();
       latestDate = datesInDb[datesInDb.length - 1];
       
       const popupSummary = {};
-      JAMIYYAH_LIST.forEach(j => {
-        LOCATIONS.forEach(loc => {
-          popupSummary[`${j} - ${loc}`] = { namaJamiyyah: j, lokasi: loc, tidakHadir: 0, telatCount: 0, rawTelat: '' };
+      currentPeserta.forEach(p => {
+        const validLocations = p.lokasi === 'Semua' ? LOCATIONS : [p.lokasi];
+        validLocations.forEach(loc => {
+          popupSummary[`${p.nama} - ${loc}`] = { namaJamiyyah: p.nama, lokasi: loc, tidakHadir: 0, telatCount: 0, rawTelat: '' };
         });
       });
 
-      const latestAbsensi = absensi.filter(a => a.tanggal_jadwal === latestDate);
+      const latestAbsensi = categoryAbsensi.filter(a => a.tanggal_jadwal === latestDate);
       latestAbsensi.forEach(row => {
         const j = row.jamiyyah;
         const loc = row.lokasi || 'Lantai 2';
@@ -126,7 +147,7 @@ export default function Recap() {
     if (filterDate === 'Global') {
       setData(summaryArray);
     } else {
-      setData(absensi.filter(a => a.tanggal_jadwal === filterDate));
+      setData(categoryAbsensi.filter(a => a.tanggal_jadwal === filterDate));
     }
     setLoading(false);
   };
@@ -167,11 +188,6 @@ export default function Recap() {
   };
 
   const confirmDelete = async () => {
-    if (deletePassword !== 'cipuyganteng') {
-      setDeleteErrorMsg('Password salah!');
-      return;
-    }
-
     setIsDeleting(true);
     setDeleteErrorMsg('');
 
@@ -214,17 +230,36 @@ export default function Recap() {
         </div>
         
         <div>
-          <select 
+          <CustomSelect 
             value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="w-full h-10 px-3 rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-navy focus:border-transparent transition-all outline-none text-slate-800 text-sm font-semibold"
-          >
-            <option value="Global">Semua Jadwal (Global)</option>
-            {dates.map(d => (
-              <option key={d} value={d}>{formatDateID(d)}</option>
-            ))}
-          </select>
+            onChange={setFilterDate}
+            options={[
+              { value: 'Global', label: 'Semua Jadwal (Global)' },
+              ...dates.map(d => ({ value: d, label: formatDateID(d) }))
+            ]}
+            placeholder="Pilih Tanggal"
+          />
         </div>
+
+        {/* Admin Export Buttons */}
+        {isAdmin && filterDate === 'Global' && (
+          <div className="flex space-x-2 pt-2 border-t border-slate-100 mt-2">
+            <button 
+              onClick={() => exportToExcel(globalSummary, category === 'jamiyyah' ? 'Fathul Qorib' : 'Perumus LBM HM')}
+              className="flex-1 flex items-center justify-center space-x-2 bg-green-50 hover:bg-green-100 text-green-700 border border-green-200 py-2 px-3 rounded-xl transition-colors text-xs font-bold"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Excel</span>
+            </button>
+            <button 
+              onClick={() => exportToWord(globalSummary, category === 'jamiyyah' ? 'Fathul Qorib' : 'Perumus LBM HM')}
+              className="flex-1 flex items-center justify-center space-x-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 py-2 px-3 rounded-xl transition-colors text-xs font-bold"
+            >
+              <FileText className="w-4 h-4" />
+              <span>Word</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Loading State */}
@@ -241,10 +276,13 @@ export default function Recap() {
             data.map((item, idx) => (
               <div key={idx} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
                 <div className="bg-slate-50 px-4 py-3 border-b border-slate-100 flex justify-between items-center">
-                  <h3 className="font-bold text-navy truncate pr-2">{item.jamiyyah}</h3>
-                  <span className="text-[10px] font-bold bg-navy/10 text-navy px-2 py-1 rounded-full">
-                    {item.total} Input
-                  </span>
+                  <h3 className="font-bold text-navy truncate pr-2">{item.namaJamiyyah}</h3>
+                  <div className="flex items-center space-x-2 shrink-0">
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">{item.lokasi === 'Lantai 2' ? 'LT 2' : 'LT 3'}</span>
+                    <span className="text-[10px] font-bold bg-navy/10 text-navy px-2 py-1 rounded-full whitespace-nowrap">
+                      {item.total} Input
+                    </span>
+                  </div>
                 </div>
                 <div className="p-4">
                   <div className="flex mb-4">
@@ -275,14 +313,14 @@ export default function Recap() {
             /* ================= VIEW SPECIFIC DATE (EDITABLE) ================= */
             <>
               {(() => {
-                const LOCATIONS = ['Lantai 2', 'Lantai 3'];
                 const missingJamiyyah = [];
-                
-                JAMIYYAH_LIST.forEach(j => {
-                  LOCATIONS.forEach(loc => {
-                    const hasRecord = data.some(record => record.jamiyyah === j && record.lokasi === loc);
+                // Only find missing records based on valid location assignments for the current date
+                pesertaList.forEach(p => {
+                  const validLocations = p.lokasi === 'Semua' ? LOCATIONS : [p.lokasi];
+                  validLocations.forEach(loc => {
+                    const hasRecord = data.some(record => record.jamiyyah === p.nama && record.lokasi === loc);
                     if (!hasRecord) {
-                      missingJamiyyah.push(`${j} ${loc === 'Lantai 2' ? 'LT 2' : 'LT 3'}`);
+                      missingJamiyyah.push(`${p.nama} ${loc === 'Lantai 2' ? 'LT 2' : 'LT 3'}`);
                     }
                   });
                 });
@@ -336,22 +374,25 @@ export default function Recap() {
                         )}
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <button 
-                        onClick={() => handleDeleteClick(record)}
-                        className="p-2 bg-red-50 text-red-400 hover:text-red-600 hover:bg-red-100 rounded-lg border border-red-100 transition-colors"
-                        title="Hapus"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleEditClick(record)}
-                        className="p-2 bg-slate-50 text-slate-400 hover:text-navy hover:bg-navy/5 rounded-lg border border-slate-200 transition-colors"
-                        title="Edit"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                    </div>
+                    
+                    {isAdmin && (
+                      <div className="flex items-center space-x-1">
+                        <button 
+                          onClick={() => handleEditClick(record)}
+                          className="p-1.5 text-slate-400 hover:text-navy transition-colors rounded-md hover:bg-slate-100"
+                          title="Edit"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button 
+                          onClick={() => handleDeleteClick(record)}
+                          className="p-1.5 text-slate-400 hover:text-red-500 transition-colors rounded-md hover:bg-red-50"
+                          title="Hapus"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
@@ -441,29 +482,17 @@ export default function Recap() {
       {/* Delete Modal (Overlay) */}
       {deletingRecord && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl p-6 border border-slate-100 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-100 mb-4 mx-auto">
-              <Trash2 className="w-6 h-6 text-red-600" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-800 text-center mb-1">Hapus Rekapan</h3>
-            <p className="text-sm text-slate-500 text-center mb-5">
-              Masukkan password untuk menghapus rekapan peserta <strong>{deletingRecord.jamiyyah}</strong>.
+          <div className="bg-white p-5 rounded-2xl w-[90%] max-w-sm shadow-2xl relative animate-in zoom-in-95 duration-200">
+            <h3 className="font-bold text-red-600 text-lg mb-2">Hapus Data</h3>
+            <p className="text-sm text-slate-600 mb-4">
+              Yakin ingin menghapus absen <strong className="text-slate-800">{deletingRecord.jamiyyah}</strong> tanggal {formatDateID(deletingRecord.tanggal_jadwal)}?
             </p>
             
-            <div className="space-y-4 mb-6">
-              <div>
-                <input 
-                  type="password"
-                  value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
-                  placeholder="******"
-                  className="w-full h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-red-500 focus:border-transparent transition-all outline-none text-slate-800 text-center tracking-widest"
-                />
+            {deleteErrorMsg && (
+              <div className="mb-4 text-xs font-semibold text-red-500 bg-red-50 p-2 rounded-lg border border-red-100">
+                {deleteErrorMsg}
               </div>
-              {deleteErrorMsg && (
-                <p className="text-xs font-semibold text-red-500 text-center">{deleteErrorMsg}</p>
-              )}
-            </div>
+            )}
 
             <div className="flex space-x-3">
               <button 
@@ -474,7 +503,7 @@ export default function Recap() {
               </button>
               <button 
                 onClick={confirmDelete}
-                disabled={isDeleting || !deletePassword}
+                disabled={isDeleting}
                 className="flex-1 py-3 font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 flex items-center justify-center"
               >
                 {isDeleting ? <Loader2 className="w-5 h-5 animate-spin" /> : "Hapus"}

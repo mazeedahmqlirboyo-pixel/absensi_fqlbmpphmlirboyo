@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../supabase';
-import { JAMIYYAH_LIST } from '../constants';
 import { generateWeeklyDates, formatDateID } from '../utils/dates';
 import { CheckCircle2, UserX, Loader2 } from 'lucide-react';
+import CustomSelect from './CustomSelect';
 import clsx from 'clsx';
 
-export default function AttendanceForm() {
+export default function AttendanceForm({ category = 'jamiyyah' }) {
   const dates = generateWeeklyDates();
   
   const [lokasi, setLokasi] = useState('');
@@ -17,14 +17,26 @@ export default function AttendanceForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [filledJamiyyah, setFilledJamiyyah] = useState([]);
+  const [pesertaDb, setPesertaDb] = useState([]);
 
   useEffect(() => {
-    // Reset form when date changes
-    setLokasi('');
-    setJamiyyah('');
-    setStatus('');
-    setKeterlambatan('');
-  }, [tanggal]);
+    fetchPesertaDb();
+  }, []);
+
+  const fetchPesertaDb = async () => {
+    const { data } = await supabase.from('peserta').select('*').order('nama', { ascending: true });
+    if (data) {
+      const uniqueData = [];
+      const seen = new Set();
+      data.forEach(p => {
+        if (!seen.has(p.nama)) {
+          seen.add(p.nama);
+          uniqueData.push(p);
+        }
+      });
+      setPesertaDb(uniqueData);
+    }
+  };
 
   useEffect(() => {
     if (tanggal && lokasi) {
@@ -34,6 +46,11 @@ export default function AttendanceForm() {
       setFilledJamiyyah([]);
     }
   }, [tanggal, lokasi]);
+
+  // Reset jamiyyah when location changes to prevent stale selection
+  useEffect(() => {
+    setJamiyyah('');
+  }, [lokasi]);
 
   const fetchFilledJamiyyah = async (selectedDate, selectedLokasi) => {
     const { data } = await supabase
@@ -71,7 +88,7 @@ export default function AttendanceForm() {
       setMessage('Lengkapi semua data utama.');
       return;
     }
-    if (status === 'Hadir' && !keterlambatan) {
+    if (status === 'Hadir' && category !== 'perumus' && !keterlambatan) {
       setMessage('Pilih status keterlambatan.');
       return;
     }
@@ -121,56 +138,55 @@ export default function AttendanceForm() {
   return (
     <div className="max-w-md mx-auto w-full px-4 py-6 pb-24">
       <div className="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-100">
-        <div className="bg-navy p-5 text-center">
-          <h2 className="text-xl font-bold text-white mb-1">Form Absensi</h2>
-          <p className="text-navy-lighter text-sm text-slate-300">Input kehadiran mingguan Peserta</p>
-        </div>
-        
         <form onSubmit={handleSubmit} className="p-5 space-y-6">
+          <div className="pb-3 flex items-center space-x-2 border-b border-slate-100">
+            <span className="w-1 h-3 rounded-full bg-navy"></span>
+            <h2 className="text-sm font-bold text-navy uppercase tracking-wider">Form Absensi</h2>
+          </div>
           
           {/* Lokasi */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Lokasi</label>
-            <select 
+            <CustomSelect 
               value={lokasi}
-              onChange={(e) => setLokasi(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-navy focus:border-transparent transition-all outline-none text-slate-800"
-            >
-              <option value="">-- Pilih Lokasi --</option>
-              <option value="Lantai 2">Lantai 2</option>
-              <option value="Lantai 3">Lantai 3</option>
-            </select>
+              onChange={setLokasi}
+              options={[
+                { value: "Lantai 2", label: "Lantai 2" },
+                { value: "Lantai 3", label: "Lantai 3" }
+              ]}
+              placeholder="-- Pilih Lokasi --"
+            />
           </div>
 
           {/* Tanggal */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Tanggal Jadwal</label>
-            <select 
+            <CustomSelect 
               value={tanggal}
-              onChange={(e) => setTanggal(e.target.value)}
-              className="w-full h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-navy focus:border-transparent transition-all outline-none text-slate-800"
-            >
-              {dates.map(d => (
-                <option key={d} value={d}>{formatDateID(d)}</option>
-              ))}
-            </select>
+              onChange={setTanggal}
+              options={dates.map(d => ({ value: d, label: formatDateID(d) }))}
+              placeholder="-- Pilih Tanggal --"
+            />
           </div>
 
           {/* Peserta */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-2">Pilih Peserta</label>
-            <select 
+            <CustomSelect 
               value={jamiyyah}
-              onChange={handleJamiyyahChange}
-              className="w-full h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-navy focus:border-transparent transition-all outline-none text-slate-800"
-            >
-              <option value="">-- Pilih Peserta --</option>
-              {JAMIYYAH_LIST.map(j => (
-                <option key={j} value={j} className={filledJamiyyah.includes(j) ? "text-slate-400" : ""}>
-                  {j} {filledJamiyyah.includes(j) ? '(Sudah Terisi)' : ''}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => handleJamiyyahChange({ target: { value: val } })}
+              options={pesertaDb
+                .filter(p => p.kategori === category)
+                .filter(p => p.lokasi === 'Semua' || p.lokasi === lokasi)
+                .map(p => ({
+                  value: p.nama,
+                  label: p.kategori === 'perumus' ? `${p.nama} (${p.lokasi === 'Lantai 2' ? 'LT 2' : p.lokasi === 'Lantai 3' ? 'LT 3' : 'Umum'})` : p.nama,
+                  disabled: filledJamiyyah.includes(p.nama),
+                  helperText: filledJamiyyah.includes(p.nama) ? "(Sudah Terisi)" : ""
+                }))
+              }
+              placeholder="-- Pilih Peserta --"
+            />
           </div>
 
           {/* Status Kehadiran */}
@@ -211,25 +227,18 @@ export default function AttendanceForm() {
           </div>
 
           {/* Sub Opsi Hadir */}
-          {status === 'Hadir' && (
+          {status === 'Hadir' && category !== 'perumus' && (
             <div className="animate-in fade-in slide-in-from-top-2 duration-300">
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Detail Kehadiran</label>
-              <div className="grid grid-cols-2 gap-2">
-                {delayOptions.map(opt => (
-                  <button
-                    key={opt}
-                    type="button"
-                    onClick={() => setKeterlambatan(opt)}
-                    className={clsx(
-                      "p-3 rounded-lg border text-sm font-medium transition-all",
-                      keterlambatan === opt 
-                        ? "bg-navy text-white border-navy shadow-md"
-                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                    )}
-                  >
-                    {opt}
-                  </button>
-                ))}
+              <div className="mt-4 p-4 bg-slate-50 rounded-xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
+                <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">
+                  Durasi Keterlambatan
+                </label>
+                <CustomSelect 
+                  value={keterlambatan}
+                  onChange={setKeterlambatan}
+                  options={delayOptions.map(opt => ({ value: opt, label: opt }))}
+                  placeholder="-- Pilih Durasi --"
+                />
               </div>
             </div>
           )}

@@ -12,3 +12,28 @@ export const JAMIYYAH_LIST = [
   "DALEM",
   "TAMATAN 2027",
 ];
+
+export const PERUMUS_LIST = [
+  "Agus H. Abdulloh Amar Zamzami",
+  "Bpk. Beki",
+  "Bpk. M. ‘Ashim",
+  "Bpk. Ngh Ks Djagad Syahidul H. A.",
+  "Bpk. Bahrul Ulum",
+  "Bpk. Endang Permana",
+  "Bpk. Muammar Rizal",
+  "Bpk. M. Khoiru Muhtadi Suhada",
+  "Bpk. Abu luthfi",
+  "Bpk. Muhammad Azizi Hasbulloh",
+  "Bpk. M. Ilyas",
+  "Bpk. Sofiyyulloh",
+  "Bpk. Miftah Yasin Putra",
+  "Bpk. M. Najib Diyaullah",
+  "Bpk. Abdul Gofar",
+  "Bpk. Abdillah Khoironi",
+  "Bpk. M. Abd. Karim",
+  "Bpk. M. Ricky Gunawan Pratama",
+  "Bpk. Imamul Huda",
+  "Bpk. M. Hadziq Hammad Hassani",
+  "Bpk. Hilal Virdyiawan",
+  "Bpk. Ahmad Faisal Assyirozi",
+];
